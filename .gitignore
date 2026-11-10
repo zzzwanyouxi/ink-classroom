@@ -10,6 +10,7 @@ Desktop.ini
 # 依赖 / 构建
 node_modules/
 dist/
+release/
 
 # 临时
 *.log

@@ -9,10 +9,62 @@
   "license": "MIT",
   "scripts": {
     "start": "electron .",
-    "pack": "electron-packager . 课堂笔记 --platform=win32 --arch=x64 --out=dist --overwrite --icon=desktop/app.ico --ignore=\"^/dist\" --ignore=\"^/node_modules\" --ignore=\"^/\\.git\""
+    "pack": "electron-packager . 课堂笔记 --platform=win32 --arch=x64 --out=dist --overwrite --icon=desktop/app.ico --ignore=\"^/dist\" --ignore=\"^/node_modules\" --ignore=\"^/\\.git\"",
+    "dist": "electron-builder --win nsis"
   },
   "devDependencies": {
     "electron": "^45.2.3",
-    "@electron/packager": "^18.3.6"
+    "@electron/packager": "^18.3.6",
+    "electron-builder": "^25.1.8",
+    "rcedit": "^4.0.1"
+  },
+  "build": {
+    "appId": "com.zzzwanyouxi.inkclassroom",
+    "productName": "课堂笔记",
+    "copyright": "Copyright © 2026 zzzwanyouxi",
+    "directories": {
+      "output": "release",
+      "buildResources": "desktop"
+    },
+    "files": [
+      "index.html",
+      "style.css",
+      "app.js",
+      "import.js",
+      "preview.png",
+      "README.md",
+      "package.json",
+      "vendor/**/*",
+      "desktop/main.js",
+      "desktop/preload.js",
+      "desktop/app.ico"
+    ],
+    "afterPack": "desktop/afterPack.js",
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "desktop/app.ico",
+      "signAndEditExecutable": false,
+      "artifactName": "课堂笔记-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "课堂笔记",
+      "uninstallDisplayName": "课堂笔记",
+      "deleteAppDataOnUninstall": false,
+      "installerIcon": "desktop/app.ico",
+      "uninstallerIcon": "desktop/app.ico",
+      "installerHeaderIcon": "desktop/app.ico",
+      "artifactName": "课堂笔记-Setup-${version}.${ext}"
+    }
   }
 }
