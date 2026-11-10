@@ -52,7 +52,7 @@ const el = {
   toolGroup: $('toolGroup'), undo: $('undoBtn'), redo: $('redoBtn'), replay: $('replayBtn'),
   shapeBtn: $('shapeBtn'), importBtn: $('importBtn'), docBtn: $('docBtn'),
   exportBtn: $('exportBtn'), presentBtn: $('presentBtn'), fullBtn: $('fullBtn'),
-  body: $('body'), side: $('side'), sideResizer: $('sideResizer'), edgeHot: $('edgeHot'), sideBtn: $('sideBtn'),
+  body: $('body'), side: $('side'), sideResizer: $('sideResizer'), sideBtn: $('sideBtn'),
   docpane: $('docpane'), splitter: $('splitter'),
   docInk: $('docInk'), docCursor: $('docCursor'),
   docScroll: $('docScroll'), docPages: $('docPages'), docEmpty: $('docEmpty'),
@@ -1877,6 +1877,12 @@ window.addEventListener('keydown', (e) => {
     return;
   }
   const mod = e.ctrlKey || e.metaKey;
+  if (mod && e.key.toLowerCase() === 'b') {
+    e.preventDefault();
+    if (el.side.classList.contains('open')) el.side.classList.remove('open');
+    else openSide();
+    return;
+  }
   if (mod && e.key.toLowerCase() === 'c') { e.preventDefault(); copySel(); return; }
   if (mod && e.key.toLowerCase() === 'v') { e.preventDefault(); pasteClip(); return; }
   if (mod && e.key.toLowerCase() === 'x') { e.preventDefault(); copySel(); deleteSel(); return; }
@@ -2227,7 +2233,6 @@ function toggleSidePin() {
   }
   save();
 }
-if (el.edgeHot) el.edgeHot.addEventListener('pointerenter', openSide);
 el.side.addEventListener('pointerenter', openSide);
 el.side.addEventListener('pointerleave', scheduleCloseSide);
 if (el.sideBtn) {
@@ -2317,13 +2322,10 @@ async function boot() {
   afterPageSwitch();
   renderAll();
   syncHistBtns();
-  const forceSideOpen = new URLSearchParams(location.search).has('sideopen');
-  openSide();
-  if (forceSideOpen) {
+  if (new URLSearchParams(location.search).has('sideopen')) {
     clearTimeout(sideTimer);
+    positionSidePanel();
     el.side.classList.add('open');
-  } else {
-    setTimeout(() => { if (!sidePinned) scheduleCloseSide(); }, 1600);
   }
   if (window.ResizeObserver) new ResizeObserver(resize).observe(el.noteScroll);
   window.addEventListener('resize', resize);
