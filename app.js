@@ -134,6 +134,7 @@ function save() {
       state.ui = {
         pens: pens, activePen: activePen, shapeSnap: shapeSnap,
         docZoom: docZoom, syncScroll: syncScroll, ribbonPinned: ribbonPinned,
+        tool: tool, zoom: zoom,
         docWidth: el.docpane.style.width || '',
       };
       localStorage.setItem(LS_KEY, JSON.stringify(state));
@@ -181,6 +182,7 @@ function loadState() {
       shapeSnap = !!state.ui.shapeSnap;
       docZoom = state.ui.docZoom || 1;
       syncScroll = !!state.ui.syncScroll;
+      if (state.ui.tool && ['pen', 'eraser', 'lasso', 'ruler'].indexOf(state.ui.tool) >= 0) tool = state.ui.tool;
       if (state.ui.docWidth) { el.docpane.style.width = state.ui.docWidth; }
     }
     if (!findPage(state.sel.page)) {
@@ -2041,6 +2043,9 @@ function boot() {
   resize();
   setTimeout(resize, 150);
   setTimeout(resize, 500);
+  if (state.ui && state.ui.zoom && state.ui.zoom !== 1) {
+    setTimeout(() => { try { setZoom(state.ui.zoom); } catch (err) {} }, 260);
+  }
   loadAssets().then(() => { renderDoc(); }).catch(() => {});
 }
 
