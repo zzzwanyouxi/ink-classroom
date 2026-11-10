@@ -12,6 +12,7 @@ const WIDTHS = [1.8, 3.6, 6.4, 10];
 const HIGH_MUL = 6;
 const MAX_PTS = 20000;
 const CALIB_KEY = 'ink-classroom-calib';
+const desktop = (typeof window !== 'undefined' && window.inkDesktop) || null;
 
 const PEN_TYPES = [
   { id: 'ballpoint', name: '圆珠笔', short: '圆珠' },
@@ -58,7 +59,7 @@ const el = {
   docname: $('docname'), syncBtn: $('syncBtn'), docZoomIn: $('docZoomIn'), docZoomOut: $('docZoomOut'),
   notepane: $('notepane'), noteScroll: $('noteScroll'), noteSpacer: $('noteSpacer'),
   bg: $('bg'), live: $('live'), penCursor: $('penCursor'), emptyhint: $('emptyhint'),
-  selbar: $('selbar'), zoomIn: $('zoomIn'), zoomOut: $('zoomOut'), zoomLabel: $('zoomLabel'),
+  selbar: $('selbar'), zoomIn: $('zoomIn'), wsBtn: $('wsBtn'), wsStatus: $('wsStatus'), zoomOut: $('zoomOut'), zoomLabel: $('zoomLabel'),
   fileInput: $('fileInput'), dropmask: $('dropmask'), toast: $('toast'),
   ribbon: $('ribbon'), ribbonHot: $('ribbonHot'), pinBtn: $('pinBtn'),
 };
@@ -148,7 +149,68 @@ function save() {
       state.ui = uiState();
       localStorage.setItem(LS_KEY, JSON.stringify(state));
     } catch (e) { /* ignore */ }
+    scheduleWorkspaceSave();
   }, 350);
+}
+
+/* ==================== 工作文件夹（桌面版自动保存） ==================== */
+let assetDirty = true;
+let wsTimer = 0;
+let wsDirPath = null;
+
+function baseName(p) {
+  if (!p) return '';
+  const s = String(p);
+  const a = s.lastIndexOf('/');
+  const b = s.lastIndexOf(String.fromCharCode(92));
+  return s.slice(Math.max(a, b) + 1);
+}
+function assetsObject() {
+  const o = {};
+  assets.forEach((v, k) => { o[k] = v; });
+  return o;
+}
+function fmtClock(t) {
+  const d = new Date(t || Date.now());
+  const h = d.getHours();
+  const m = d.getMinutes();
+  return (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
+}
+function updateWsStatus(text) {
+  const n = document.getElementById('wsStatus');
+  if (n) n.textContent = text;
+}
+function scheduleWorkspaceSave() {
+  if (!desktop) return;
+  clearTimeout(wsTimer);
+  wsTimer = setTimeout(async () => {
+    try {
+      state.ui = uiState();
+      const r = await desktop.saveWorkspace({ state: state, assets: assetDirty ? assetsObject() : null });
+      if (r && r.ok) {
+        assetDirty = false;
+        wsDirPath = r.dir;
+        updateWsStatus('已保存 ' + fmtClock(r.at));
+      } else {
+        updateWsStatus('未绑定文件夹');
+      }
+    } catch (e) { /* ignore */ }
+  }, 1200);
+}
+async function chooseWorkspace() {
+  if (!desktop) { toast('网页版不支持文件夹保存，请用桌面版'); return; }
+  try {
+    const dir = await desktop.pickFolder();
+    if (!dir) return;
+    wsDirPath = dir;
+    state.ui = uiState();
+    const r = await desktop.saveWorkspace({ state: state, assets: assetsObject() });
+    assetDirty = false;
+    updateWsStatus('已绑定 ' + baseName(dir));
+    if (r && r.ok) toast('已保存到文件夹：' + baseName(dir));
+  } catch (e) {
+    toast('选择文件夹失败');
+  }
 }
 
 function loadCalib() {
@@ -161,13 +223,8 @@ function loadCalib() {
   } catch (e) { /* ignore */ }
 }
 
-function loadState() {
-  try {
-    const raw = localStorage.getItem(LS_KEY);
-    if (!raw) return false;
-    const data = JSON.parse(raw);
-    if (!data || !Array.isArray(data.notebooks) || !data.notebooks.length) return false;
-    state = data;
+function normalizeState() {
+  if (!state || !Array.isArray(state.notebooks) || !state.notebooks.length) return false;
     if (!state.ui || !state.ui.inkNorm2) {
       for (const nb of state.notebooks) {
         for (const sec of nb.sections) {
@@ -205,7 +262,17 @@ function loadState() {
       const sec = nb.sections[0];
       state.sel = { nb: nb.id, sec: sec.id, page: sec.pages[0].id };
     }
-    return true;
+  return true;
+}
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return false;
+    const data = JSON.parse(raw);
+    if (!data || !Array.isArray(data.notebooks) || !data.notebooks.length) return false;
+    state = data;
+    return normalizeState();
   } catch (e) { return false; }
 }
 
@@ -237,6 +304,7 @@ async function loadAssets() {
   for (const a of all) assets.set(a.id, a.dataUrl);
 }
 function putAsset(id, dataUrl) {
+  assetDirty = true;
   assets.set(id, dataUrl);
   if (!idb) return;
   try { idb.transaction('assets', 'readwrite').objectStore('assets').put({ id: id, dataUrl: dataUrl }); } catch (e) {}
@@ -1677,14 +1745,21 @@ el.exportBtn.addEventListener('click', () => {
   });
 });
 
-function toggleFull() {
-  if (document.fullscreenElement) {
+function fsEnter() {
+  if (desktop) { desktop.setFullScreen(true); return; }
+  const p = document.documentElement.requestFullscreen && document.documentElement.requestFullscreen();
+  if (p && p.catch) p.catch(() => {});
+}
+function fsExit() {
+  if (desktop) { desktop.setFullScreen(false); return; }
+  if (document.fullscreenElement && document.exitFullscreen) {
     const p = document.exitFullscreen();
     if (p && p.catch) p.catch(() => {});
-  } else {
-    const p = document.documentElement.requestFullscreen();
-    if (p && p.catch) p.catch(() => {});
   }
+}
+function toggleFull() {
+  if (desktop) { desktop.toggleFullScreen(); return; }
+  if (document.fullscreenElement) fsExit(); else fsEnter();
 }
 if (el.fullBtn) el.fullBtn.addEventListener('click', toggleFull);
 
@@ -1692,23 +1767,27 @@ function enterPresent() {
   if (document.body.classList.contains('present')) return;
   document.body.classList.add('present');
   selection.clear();
-  const r = document.documentElement.requestFullscreen && document.documentElement.requestFullscreen();
-  if (r && r.catch) r.catch(() => {});
+  fsEnter();
   toast('投影模式 · 按 P 或 Esc 退出');
   setTimeout(resize, 80);
 }
 function exitPresent() {
   if (!document.body.classList.contains('present')) return;
   document.body.classList.remove('present');
-  if (document.fullscreenElement && document.exitFullscreen) {
-    const r = document.exitFullscreen();
-    if (r && r.catch) r.catch(() => {});
-  }
+  fsExit();
   setTimeout(resize, 80);
 }
 el.presentBtn.addEventListener('click', () => {
   document.body.classList.contains('present') ? exitPresent() : enterPresent();
 });
+if (desktop && desktop.onFullScreen) {
+  desktop.onFullScreen((v) => {
+    if (!v) {
+      document.body.classList.remove('present');
+      setTimeout(resize, 80);
+    }
+  });
+}
 document.addEventListener('fullscreenchange', () => {
   if (!document.fullscreenElement) document.body.classList.remove('present');
   setTimeout(resize, 80);
@@ -1743,6 +1822,7 @@ async function importFiles(files) {
     }
   }
 }
+if (el.wsBtn) el.wsBtn.addEventListener('click', chooseWorkspace);
 el.importBtn.addEventListener('click', () => el.fileInput.click());
 el.fileInput.addEventListener('change', () => {
   if (el.fileInput.files && el.fileInput.files.length) importFiles(el.fileInput.files);
@@ -2144,10 +2224,26 @@ window.addEventListener('error', (e) => {
   try { toast('脚本错误：' + (e.message || e.error)); } catch (err) {}
 });
 
-function boot() {
+async function boot() {
   loadCalib();
-  const ok = loadState();
+  let ok = false;
+  if (desktop) {
+    try {
+      const ws = await desktop.loadWorkspace();
+      if (ws && ws.state && Array.isArray(ws.state.notebooks) && ws.state.notebooks.length) {
+        state = ws.state;
+        wsDirPath = ws.dir || null;
+        if (ws.assets) {
+          for (const k in ws.assets) assets.set(k, ws.assets[k]);
+          assetDirty = false;
+        }
+        ok = normalizeState();
+      }
+    } catch (e) { ok = false; }
+  }
+  if (!ok) ok = loadState();
   if (!ok) seed();
+  if (desktop) updateWsStatus(wsDirPath ? '已绑定 ' + baseName(wsDirPath) : '本地（未绑定）');
   if (new URLSearchParams(location.search).has('demo')) seedDemo();
   ribbonPinned = !!(state.ui && state.ui.ribbonPinned);
   applyPin();
