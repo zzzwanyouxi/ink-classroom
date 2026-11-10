@@ -181,10 +181,10 @@ a.ghost { display: inline-flex; align-items: center; text-decoration: none; }
 #bg { z-index: 1; }
 #live { z-index: 2; }
 #noteScroll {
-  position: absolute; inset: 0; overflow-y: scroll; overflow-x: hidden;
+  position: absolute; inset: 0; overflow: auto;
   z-index: 3; cursor: none; background: transparent;
 }
-#noteScroll::-webkit-scrollbar { width: 12px; }
+#noteScroll::-webkit-scrollbar { width: 12px; height: 12px; }
 #noteScroll::-webkit-scrollbar-thumb { background: #c9ccd8; border-radius: 6px; border: 3px solid #eef0f5; }
 #noteScroll::-webkit-scrollbar-track { background: transparent; }
 #noteSpacer { width: 1px; }

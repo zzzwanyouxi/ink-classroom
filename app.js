@@ -237,7 +237,16 @@ function recompute() {
 function updateSpacer() {
   const p = pageNow();
   if (!p) return;
+  const cw = Math.max(paneW, Math.round(p.w * scale));
+  el.noteSpacer.style.width = cw + 'px';
   el.noteSpacer.style.height = Math.round(p.h * scale + 80) + 'px';
+}
+
+function viewOffsetX() {
+  const p = pageNow();
+  if (!p) return 0;
+  if (el.noteScroll.scrollWidth - el.noteScroll.clientWidth > 1) return -el.noteScroll.scrollLeft;
+  return (paneW - p.w * scale) / 2;
 }
 function applyView(ctx) {
   ctx.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * offsetX, dpr * (-scrollTop));
@@ -245,8 +254,8 @@ function applyView(ctx) {
 function toContent(e) {
   const r = el.noteScroll.getBoundingClientRect();
   return {
-    x: (e.clientX - r.left - offsetX) / scale,
-    y: (e.clientY - r.top + scrollTop) / scale,
+    x: (e.clientX - r.left - viewOffsetX()) / scale,
+    y: (e.clientY - r.top + el.noteScroll.scrollTop) / scale,
   };
 }
 function updateZoomLabel() { el.zoomLabel.textContent = Math.round(zoom * 100) + '%'; }
@@ -637,6 +646,7 @@ function redraw() {
   const p = pageNow();
   if (!p) return;
   recompute();
+  offsetX = viewOffsetX();
   if (!paneW) return;
   const y0 = scrollTop / scale;
   const y1 = (scrollTop + paneH) / scale;
@@ -697,6 +707,7 @@ function renderLive() {
   clearLive();
   const p = pageNow();
   if (!p || !paneW) return;
+  offsetX = viewOffsetX();
   applyView(liveCtx);
   liveCtx.save();
   liveCtx.beginPath();
@@ -767,6 +778,8 @@ let lassoPts = null;
 let moving = null;
 let lastPenAt = 0;
 let replaying = { active: false, count: 0, total: 0, raf: 0 };
+let panStart = null;
+let spaceDown = false;
 
 function pressureOf(e) {
   if (e.pointerType === 'pen') return clamp(e.pressure || 0.5, 0.06, 1);
@@ -803,6 +816,13 @@ function onDown(e) {
   const p = pageNow();
   if (!p) return;
   e.preventDefault();
+  if (spaceDown || e.button === 1) {
+    panStart = { sx: e.clientX, sy: e.clientY, sl: el.noteScroll.scrollLeft, st: el.noteScroll.scrollTop };
+    try { el.noteScroll.setPointerCapture(e.pointerId); } catch (err) {}
+    el.noteScroll.style.cursor = 'grabbing';
+    el.penCursor.style.display = 'none';
+    return;
+  }
   warnIfMouse(e);
   try { el.noteScroll.setPointerCapture(e.pointerId); } catch (err) {}
   placeCursor(e);
@@ -862,6 +882,13 @@ function addPoint(s, x, y, pressure) {
 
 function onMove(e) {
   if (isPalm(e)) return;
+  if (panStart) {
+    el.noteScroll.scrollLeft = panStart.sl - (e.clientX - panStart.sx);
+    el.noteScroll.scrollTop = panStart.st - (e.clientY - panStart.sy);
+    scrollTop = el.noteScroll.scrollTop;
+    redraw();
+    return;
+  }
   placeCursor(e);
   const p = pageNow();
   if (!p) return;
@@ -944,6 +971,7 @@ function finishStroke() {
 }
 
 function onUp() {
+  if (panStart) { panStart = null; el.noteScroll.style.cursor = spaceDown ? 'grab' : ''; return; }
   if (moving) { moving = null; save(); return; }
   if (eraseSet) { eraseSet = null; save(); return; }
   if (lassoPts) { applyLasso(); return; }
@@ -1265,7 +1293,7 @@ function afterPageSwitch() {
   selection.clear();
   zoom = 1;
   scrollTop = 0;
-  if (el.noteScroll) el.noteScroll.scrollTop = 0;
+  if (el.noteScroll) { el.noteScroll.scrollTop = 0; el.noteScroll.scrollLeft = 0; }
   if (el.docScroll) el.docScroll.scrollTop = 0;
   recompute();
   updateSpacer();
@@ -1509,11 +1537,18 @@ el.splitter.addEventListener('pointerup', () => { if (splitDrag) { splitDrag = n
 
 /* ==================== 缩放 ==================== */
 function setZoom(z) {
-  const center = (scrollTop + paneH / 2) / scale;
-  zoom = clamp(z, 0.6, 2.5);
+  const p = pageNow();
+  if (!p) return;
+  const vx = viewOffsetX();
+  const cx = (paneW / 2 - vx) / scale;
+  const cy = (el.noteScroll.scrollTop + paneH / 2) / scale;
+  zoom = clamp(z, 0.5, 3.5);
   recompute();
   updateSpacer();
-  el.noteScroll.scrollTop = Math.max(0, center * scale - paneH / 2);
+  const pageW = p.w * scale;
+  if (pageW > paneW) el.noteScroll.scrollLeft = clamp(cx * scale - paneW / 2, 0, pageW - paneW);
+  else el.noteScroll.scrollLeft = 0;
+  el.noteScroll.scrollTop = clamp(cy * scale - paneH / 2, 0, Math.max(0, p.h * scale + 80 - paneH));
   scrollTop = el.noteScroll.scrollTop;
   redraw();
   updateZoomLabel();
@@ -1635,6 +1670,11 @@ window.addEventListener('paste', (e) => {
 window.addEventListener('keydown', (e) => {
   const tag = (e.target && e.target.tagName) || '';
   if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  if (e.code === 'Space') {
+    e.preventDefault();
+    if (!spaceDown) { spaceDown = true; el.noteScroll.style.cursor = 'grab'; }
+    return;
+  }
   const mod = e.ctrlKey || e.metaKey;
   if (mod && e.key.toLowerCase() === 'c') { e.preventDefault(); copySel(); return; }
   if (mod && e.key.toLowerCase() === 'v') { e.preventDefault(); pasteClip(); return; }
@@ -1659,6 +1699,10 @@ window.addEventListener('keydown', (e) => {
     e.preventDefault();
     deleteSel();
   }
+});
+
+window.addEventListener('keyup', (e) => {
+  if (e.code === 'Space') { spaceDown = false; el.noteScroll.style.cursor = ''; }
 });
 
 /* ==================== 尺寸 ==================== */
@@ -2042,6 +2086,10 @@ function runSelfTest() {
     el.docScroll.dispatchEvent(new PointerEvent('pointerup', o2(r0.left + 120, r0.top + 100)));
     log('docInk', (pageNow().docInk || []).length);
   }
+
+  setZoom(1.8);
+  log('hscroll', 'sw=' + el.noteScroll.scrollWidth + ' cw=' + el.noteScroll.clientWidth + ' sl=' + el.noteScroll.scrollLeft + ' scale=' + scale.toFixed(2));
+  setZoom(1);
 
   const before = pageNow().h;
   const deep = before - 160;
