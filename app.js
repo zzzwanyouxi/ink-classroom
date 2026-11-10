@@ -7,7 +7,7 @@ const BASE_W = 1600;
 const BASE_H = 2400;
 const GROW_STEP = 800;
 const MAX_H = 40000;
-const PAD = 14;
+const PAD = 10;
 const WIDTHS = [1.8, 3.6, 6.4, 10];
 const HIGH_MUL = 6;
 const MAX_PTS = 20000;
@@ -52,7 +52,7 @@ const el = {
   toolGroup: $('toolGroup'), undo: $('undoBtn'), redo: $('redoBtn'), replay: $('replayBtn'),
   shapeBtn: $('shapeBtn'), importBtn: $('importBtn'), docBtn: $('docBtn'),
   exportBtn: $('exportBtn'), presentBtn: $('presentBtn'), fullBtn: $('fullBtn'),
-  body: $('body'), side: $('side'), sideResizer: $('sideResizer'),
+  body: $('body'), side: $('side'), sideResizer: $('sideResizer'), rail: $('rail'),
   docpane: $('docpane'), splitter: $('splitter'),
   docInk: $('docInk'), docCursor: $('docCursor'),
   docScroll: $('docScroll'), docPages: $('docPages'), docEmpty: $('docEmpty'),
@@ -133,7 +133,7 @@ function uiState() {
   return {
     pens: pens, activePen: activePen, shapeSnap: shapeSnap,
     docZoom: docZoom, syncScroll: syncScroll, ribbonPinned: ribbonPinned,
-    tool: tool, zoom: zoom,
+    tool: tool, zoom: zoom, sidePinned: sidePinned,
     defaultPenIdx: defaultPenIdx,
     defaultPen: defaultPenIdx >= 0 && pens[defaultPenIdx]
       ? { type: pens[defaultPenIdx].type, color: pens[defaultPenIdx].color, w: pens[defaultPenIdx].w }
@@ -256,6 +256,7 @@ function normalizeState() {
         tool = 'pen';
       }
       if (state.ui.docWidth) { el.docpane.style.width = state.ui.docWidth; }
+      if (state.ui.sidePinned) { sidePinned = true; el.side.classList.add('pinned', 'open'); }
     }
     if (!findPage(state.sel.page)) {
       const nb = state.notebooks[0];
@@ -2171,6 +2172,40 @@ el.sideResizer.addEventListener('pointermove', (e) => {
 });
 el.sideResizer.addEventListener('pointerup', () => { if (sideDrag) { sideDrag = null; save(); } });
 
+/* ==================== 侧栏悬停显示（Codex 式浮层） ==================== */
+let sidePinned = false;
+let sideTimer = 0;
+
+function openSide() {
+  clearTimeout(sideTimer);
+  el.side.classList.add('open');
+}
+function closeSide() {
+  if (sidePinned) return;
+  el.side.classList.remove('open');
+}
+function scheduleCloseSide() {
+  clearTimeout(sideTimer);
+  if (sidePinned) return;
+  sideTimer = setTimeout(() => { if (!sidePinned) el.side.classList.remove('open'); }, 380);
+}
+function toggleSidePin() {
+  sidePinned = !sidePinned;
+  el.side.classList.toggle('pinned', sidePinned);
+  if (sidePinned) {
+    openSide();
+    toast('侧栏已固定（再点一下取消）');
+  } else {
+    scheduleCloseSide();
+    toast('侧栏改为悬停显示：鼠标移到最左图标条就出现');
+  }
+  save();
+}
+el.rail.addEventListener('pointerenter', openSide);
+el.rail.addEventListener('pointerleave', scheduleCloseSide);
+el.side.addEventListener('pointerenter', openSide);
+el.side.addEventListener('pointerleave', scheduleCloseSide);
+
 /* ==================== 工具栏自动隐藏 ==================== */
 let ribbonPinned = false;
 let ribbonTimer = 0;
@@ -2251,6 +2286,8 @@ async function boot() {
   afterPageSwitch();
   renderAll();
   syncHistBtns();
+  openSide();
+  setTimeout(() => { if (!sidePinned) scheduleCloseSide(); }, 1600);
   if (window.ResizeObserver) new ResizeObserver(resize).observe(el.noteScroll);
   window.addEventListener('resize', resize);
   resize();
@@ -2360,10 +2397,7 @@ document.querySelectorAll('.rail-btn').forEach((b) => {
       return;
     }
     if (r === 'info') { toast('课堂笔记 · 左原卷 / 右草稿 · 两边都能写'); return; }
-    // home：显示 / 收起左侧栏
-    const hidden = el.side.style.display === 'none';
-    if (hidden) setSideWidth(240); else el.side.style.display = 'none';
-    setTimeout(resize, 30);
+    toggleSidePin();
   });
 });
 
