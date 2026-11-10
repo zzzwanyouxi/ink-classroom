@@ -158,6 +158,17 @@ function loadState() {
     const data = JSON.parse(raw);
     if (!data || !Array.isArray(data.notebooks) || !data.notebooks.length) return false;
     state = data;
+    if (!state.ui || !state.ui.inkNorm2) {
+      for (const nb of state.notebooks) {
+        for (const sec of nb.sections) {
+          for (const pg of sec.pages) {
+            for (const s of (pg.docInk || [])) s.width = s.width * (1000 / 1600) / 1.6;
+          }
+        }
+      }
+      state.ui = state.ui || {};
+      state.ui.inkNorm2 = 1;
+    }
     for (const nb of state.notebooks) {
       for (const sec of nb.sections) {
         if (!Array.isArray(sec.pages) || !sec.pages.length) sec.pages = [newPage('第 1 页')];
@@ -778,13 +789,21 @@ function setCursorShape() {
   el.penCursor.className = tool === 'eraser' ? 'eraser' : tool === 'lasso' ? 'lasso' : '';
 }
 
+let warnedPointer = false;
+function warnIfMouse(e) {
+  if (warnedPointer || e.pointerType !== 'mouse') return;
+  warnedPointer = true;
+  toast('检测到输入是鼠标：数位板在鼠标模式，压感用不了。驱动里切到 Windows Ink 才有笔锋');
+}
+
 function onDown(e) {
-  if (e.pointerType === 'mouse' && e.button !== 0) return;
+  if (e.button === 2) return;
   if (e.pointerType === 'pen') lastPenAt = performance.now();
   if (isPalm(e) || !e.isPrimary) return;
   const p = pageNow();
   if (!p) return;
   e.preventDefault();
+  warnIfMouse(e);
   try { el.noteScroll.setPointerCapture(e.pointerId); } catch (err) {}
   placeCursor(e);
   if (replaying.active) stopReplay();
@@ -981,6 +1000,15 @@ function eraseAt(x, y) {
   });
   if (changed) { selection.clear(); redraw(); }
 }
+
+/* 输入保护：阻止原生拖拽、文本选中、中键自动滚动 */
+document.addEventListener('dragstart', (e) => { e.preventDefault(); }, true);
+document.addEventListener('selectstart', (e) => {
+  const t = e.target;
+  if (t && t.closest && t.closest('#notepane, #docpane, #side, #rail, #ribbon')) e.preventDefault();
+}, true);
+document.addEventListener('mousedown', (e) => { if (e.button === 1) e.preventDefault(); }, { passive: false });
+document.addEventListener('auxclick', (e) => { if (e.button === 1) e.preventDefault(); });
 
 el.noteScroll.addEventListener('pointerdown', onDown);
 el.noteScroll.addEventListener('pointermove', onMove);
@@ -1805,15 +1833,17 @@ function docEraseAt(cx, cy) {
 }
 
 function docDown(e) {
-  if (e.pointerType === 'mouse' && e.button !== 0) return;
+  if (e.button === 2) return;
   if (e.pointerType === 'pen') docLastPenAt = performance.now();
   if (e.pointerType === 'touch' && performance.now() - docLastPenAt < 1200) return;
   if (!e.isPrimary) return;
   const p = pageNow();
-  if (!p || !p.doc) return;
+  if (!p) return;
+  e.preventDefault();
+  warnIfMouse(e);
+  if (!p.doc) { toast('先把 PDF / 图片放到左边'); return; }
   const q = docLocal(e.clientX, e.clientY);
   if (!q) return;
-  e.preventDefault();
   try { el.docScroll.setPointerCapture(e.pointerId); } catch (err) {}
   docCursorMove(e);
   if (tool === 'eraser') { pushHist(); docErase = new Set(); docEraseAt(e.clientX, e.clientY); return; }
@@ -1825,7 +1855,7 @@ function docDown(e) {
     pageIdx: q.idx,
     tool: isRuler ? 'ballpoint' : pen.type,
     color: pen.color,
-    width: penWidth(pen) * 1.6,
+    width: penWidth(pen) * (DOC_W / 1600),
     pts: [{ x: q.x, y: q.y, p: pressureOf(e) }],
   };
   drawDocInk();

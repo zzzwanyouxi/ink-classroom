@@ -377,6 +377,20 @@ body.present #ribbonHot { display: none; }
 .foot-sep { color: #cfcfda; }
 body.present #rail, body.present #side { display: none; }
 
+/* 输入保护：数位板常被当成鼠标，禁止原生拖拽/选中/触摸滚动 */
+#noteScroll, #docScroll {
+  touch-action: none;
+  overscroll-behavior: contain;
+  -webkit-user-drag: none;
+}
+#noteScroll img, #docScroll img, .doc-page img {
+  -webkit-user-drag: none;
+  user-drag: none;
+  pointer-events: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 /* 侧栏拖拽收起 */
 #sideResizer {
   width: 5px; flex: 0 0 5px; cursor: col-resize; background: transparent;
