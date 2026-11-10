@@ -50,7 +50,7 @@ const el = {
   penGroup: $('penGroup'), colorGroup: $('colorGroup'), widthGroup: $('widthGroup'),
   toolGroup: $('toolGroup'), undo: $('undoBtn'), redo: $('redoBtn'), replay: $('replayBtn'),
   shapeBtn: $('shapeBtn'), importBtn: $('importBtn'), docBtn: $('docBtn'),
-  exportBtn: $('exportBtn'), presentBtn: $('presentBtn'),
+  exportBtn: $('exportBtn'), presentBtn: $('presentBtn'), fullBtn: $('fullBtn'),
   body: $('body'), side: $('side'), sideResizer: $('sideResizer'),
   docpane: $('docpane'), splitter: $('splitter'),
   docInk: $('docInk'), docCursor: $('docCursor'),
@@ -127,16 +127,25 @@ function seed() {
 
 /* ==================== 存档 ==================== */
 let saveTimer = 0;
+
+function uiState() {
+  return {
+    pens: pens, activePen: activePen, shapeSnap: shapeSnap,
+    docZoom: docZoom, syncScroll: syncScroll, ribbonPinned: ribbonPinned,
+    tool: tool, zoom: zoom,
+    defaultPenIdx: defaultPenIdx,
+    defaultPen: defaultPenIdx >= 0 && pens[defaultPenIdx]
+      ? { type: pens[defaultPenIdx].type, color: pens[defaultPenIdx].color, w: pens[defaultPenIdx].w }
+      : null,
+    docWidth: el.docpane.style.width || '',
+  };
+}
+
 function save() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     try {
-      state.ui = {
-        pens: pens, activePen: activePen, shapeSnap: shapeSnap,
-        docZoom: docZoom, syncScroll: syncScroll, ribbonPinned: ribbonPinned,
-        tool: tool, zoom: zoom,
-        docWidth: el.docpane.style.width || '',
-      };
+      state.ui = uiState();
       localStorage.setItem(LS_KEY, JSON.stringify(state));
     } catch (e) { /* ignore */ }
   }, 350);
@@ -183,6 +192,12 @@ function loadState() {
       docZoom = state.ui.docZoom || 1;
       syncScroll = !!state.ui.syncScroll;
       if (state.ui.tool && ['pen', 'eraser', 'lasso', 'ruler'].indexOf(state.ui.tool) >= 0) tool = state.ui.tool;
+      if (typeof state.ui.defaultPenIdx === 'number' && state.ui.defaultPenIdx >= 0 && state.ui.defaultPen && state.ui.defaultPenIdx < 4) {
+        defaultPenIdx = state.ui.defaultPenIdx;
+        pens[defaultPenIdx] = { type: state.ui.defaultPen.type, color: state.ui.defaultPen.color, w: state.ui.defaultPen.w };
+        activePen = defaultPenIdx;
+        tool = 'pen';
+      }
       if (state.ui.docWidth) { el.docpane.style.width = state.ui.docWidth; }
     }
     if (!findPage(state.sel.page)) {
@@ -782,6 +797,7 @@ let lastPenAt = 0;
 let replaying = { active: false, count: 0, total: 0, raf: 0 };
 let panStart = null;
 let spaceDown = false;
+let defaultPenIdx = -1;
 
 function pressureOf(e) {
   if (e.pointerType === 'pen') return clamp(e.pressure || 0.5, 0.06, 1);
@@ -1077,7 +1093,8 @@ function renderToolbar() {
   el.penGroup.textContent = '';
   pens.forEach((pen, i) => {
     const b = document.createElement('button');
-    b.className = 'pen' + (i === activePen && tool !== 'eraser' && tool !== 'lasso' ? ' active' : '');
+    b.className = 'pen' + (i === activePen && tool !== 'eraser' && tool !== 'lasso' ? ' active' : '')
+      + (i === defaultPenIdx ? ' isdefault' : '');
     b.dataset.pen = String(i);
     b.title = PEN_TYPES[i].name;
     const dot = document.createElement('span');
@@ -1126,6 +1143,24 @@ el.penGroup.addEventListener('click', (e) => {
   tool = 'pen';
   renderToolbar(); save();
 });
+el.penGroup.addEventListener('contextmenu', (e) => {
+  const b = e.target.closest('[data-pen]');
+  if (!b) return;
+  e.preventDefault();
+  const i = parseInt(b.dataset.pen, 10);
+  if (defaultPenIdx === i) {
+    defaultPenIdx = -1;
+    toast('已取消默认笔，改成记住上次用的笔');
+  } else {
+    defaultPenIdx = i;
+    activePen = i;
+    tool = 'pen';
+    toast('默认笔：' + PEN_TYPES[i].name + '（以后每次打开都用它）');
+  }
+  renderToolbar();
+  save();
+});
+
 el.colorGroup.addEventListener('click', (e) => {
   const b = e.target.closest('[data-color]');
   if (!b) return;
@@ -1291,20 +1326,37 @@ function renderAll() {
   redraw();
 }
 
-function afterPageSwitch() {
+function saveView() {
+  const p = pageNow();
+  if (!p) return;
+  p.view = {
+    zoom: zoom,
+    top: el.noteScroll.scrollTop,
+    left: el.noteScroll.scrollLeft,
+    docTop: el.docScroll.scrollTop,
+  };
+}
+
+function afterPageSwitch(fresh) {
   selection.clear();
-  zoom = 1;
+  const p = pageNow();
+  const v = (!fresh && p && p.view) ? p.view : null;
+  zoom = (v && v.zoom) ? v.zoom : 1;
   scrollTop = 0;
-  if (el.noteScroll) { el.noteScroll.scrollTop = 0; el.noteScroll.scrollLeft = 0; }
-  if (el.docScroll) el.docScroll.scrollTop = 0;
   recompute();
   updateSpacer();
   ensureMinHeight();
+  el.noteScroll.scrollTop = v ? (v.top || 0) : 0;
+  el.noteScroll.scrollLeft = v ? (v.left || 0) : 0;
+  el.docScroll.scrollTop = v ? (v.docTop || 0) : 0;
+  scrollTop = el.noteScroll.scrollTop;
+  updateZoomLabel();
 }
 
 function selectSection(id) {
   const hit = findSection(id);
   if (!hit) return;
+  saveView();
   state.sel = { nb: hit.nb.id, sec: hit.sec.id, page: hit.sec.pages[0].id };
   hit.nb.open = true;
   hit.sec.open = true;
@@ -1316,6 +1368,7 @@ function selectSection(id) {
 function selectPage(id) {
   const hit = findPage(id);
   if (!hit) return;
+  saveView();
   state.sel = { nb: hit.nb.id, sec: hit.sec.id, page: hit.page.id };
   hit.nb.open = true;
   hit.sec.open = true;
@@ -1329,11 +1382,12 @@ function selectPage(id) {
 function addPageTo(secId) {
   const hit = findSection(secId);
   if (!hit) return;
+  saveView();
   const p = newPage('第 ' + (hit.sec.pages.length + 1) + ' 页');
   hit.sec.pages.push(p);
   hit.sec.open = true;
   state.sel = { nb: hit.nb.id, sec: hit.sec.id, page: p.id };
-  afterPageSwitch();
+  afterPageSwitch(true);
   renderAll();
   save();
 }
@@ -1347,11 +1401,12 @@ function addPage() {
 function addSection(nbId) {
   const nb = findNotebook(nbId);
   if (!nb) return;
+  saveView();
   const s = newSection('分区 ' + (nb.sections.length + 1));
   nb.sections.push(s);
   nb.open = true;
   state.sel = { nb: nb.id, sec: s.id, page: s.pages[0].id };
-  afterPageSwitch();
+  afterPageSwitch(true);
   renderAll();
   save();
   setTimeout(() => {
@@ -1361,10 +1416,11 @@ function addSection(nbId) {
 }
 
 function addNotebook() {
+  saveView();
   const nb = newNotebook('文件夹 ' + (state.notebooks.length + 1));
   state.notebooks.push(nb);
   state.sel = { nb: nb.id, sec: nb.sections[0].id, page: nb.sections[0].pages[0].id };
-  afterPageSwitch();
+  afterPageSwitch(true);
   renderAll();
   save();
   setTimeout(() => {
@@ -1585,6 +1641,17 @@ el.exportBtn.addEventListener('click', () => {
   });
 });
 
+function toggleFull() {
+  if (document.fullscreenElement) {
+    const p = document.exitFullscreen();
+    if (p && p.catch) p.catch(() => {});
+  } else {
+    const p = document.documentElement.requestFullscreen();
+    if (p && p.catch) p.catch(() => {});
+  }
+}
+if (el.fullBtn) el.fullBtn.addEventListener('click', toggleFull);
+
 function enterPresent() {
   if (document.body.classList.contains('present')) return;
   document.body.classList.add('present');
@@ -1691,6 +1758,7 @@ window.addEventListener('keydown', (e) => {
   if (e.key.toLowerCase() === 'l') { tool = 'lasso'; renderToolbar(); return; }
   if (e.key.toLowerCase() === 'r') { tool = 'ruler'; renderToolbar(); return; }
   if (e.key.toLowerCase() === 'h') { togglePin(); return; }
+  if (e.key.toLowerCase() === 'f') { toggleFull(); return; }
   if (e.key.toLowerCase() === 'p') { e.preventDefault(); document.body.classList.contains('present') ? exitPresent() : enterPresent(); return; }
   if (e.key === 'Escape') {
     if (selection.size) { selection.clear(); redraw(); } else exitPresent();
@@ -1705,6 +1773,14 @@ window.addEventListener('keydown', (e) => {
 
 window.addEventListener('keyup', (e) => {
   if (e.code === 'Space') { spaceDown = false; el.noteScroll.style.cursor = ''; }
+});
+
+window.addEventListener('beforeunload', () => {
+  try {
+    saveView();
+    state.ui = uiState();
+    localStorage.setItem(LS_KEY, JSON.stringify(state));
+  } catch (e) { /* ignore */ }
 });
 
 /* ==================== 尺寸 ==================== */
@@ -2043,7 +2119,7 @@ function boot() {
   resize();
   setTimeout(resize, 150);
   setTimeout(resize, 500);
-  if (state.ui && state.ui.zoom && state.ui.zoom !== 1) {
+  if (state.ui && state.ui.zoom && state.ui.zoom !== 1 && !(pageNow() && pageNow().view)) {
     setTimeout(() => { try { setZoom(state.ui.zoom); } catch (err) {} }, 260);
   }
   loadAssets().then(() => { renderDoc(); }).catch(() => {});
@@ -2091,6 +2167,22 @@ function runSelfTest() {
     el.docScroll.dispatchEvent(new PointerEvent('pointerup', o2(r0.left + 120, r0.top + 100)));
     log('docInk', (pageNow().docInk || []).length);
   }
+
+  // 视图记忆：调好缩放和滚动 → 切去新页 → 切回来应恢复
+  setZoom(1.6);
+  el.noteScroll.scrollTop = 200;
+  saveView();
+  const pageA = state.sel.page;
+  const secA = curObj().sec.id;
+  addPageTo(secA);
+  log('newPageZoom', zoom.toFixed(2) + ' top=' + el.noteScroll.scrollTop);
+  selectPage(pageA);
+  log('viewMem', 'zoom=' + zoom.toFixed(2) + ' top=' + el.noteScroll.scrollTop);
+
+  // 默认笔：右键笔槽 2
+  const penBtn = el.penGroup.querySelector('[data-pen="1"]');
+  if (penBtn) penBtn.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+  log('defaultPen', String(defaultPenIdx));
 
   setZoom(1.8);
   log('hscroll', 'sw=' + el.noteScroll.scrollWidth + ' cw=' + el.noteScroll.clientWidth + ' sl=' + el.noteScroll.scrollLeft + ' scale=' + scale.toFixed(2));
