@@ -328,16 +328,18 @@ body.present #ribbonHot { display: none; }
 .rail-grow { flex: 1; }
 
 #side {
-  position: absolute; left: 0; top: 0; bottom: 0; width: 240px; z-index: 26;
-  background: #f7f7fa; border-right: 1px solid #e3e3ea;
-  display: flex; flex-direction: column;
-  transform: translateX(calc(-100% - 48px));
-  transition: transform .18s ease, box-shadow .18s ease;
-  box-shadow: 0 12px 34px rgba(20, 20, 40, 0);
+  position: absolute; left: 44px; top: 8px; bottom: 8px; width: 252px; z-index: 26;
+  background: #f7f7fa; border: 1px solid #e5e5ee; border-radius: 12px;
+  display: flex; flex-direction: column; overflow: hidden;
+  transform: translateX(calc(-100% - 64px)) scale(.985);
+  opacity: 0; visibility: hidden;
+  transition: transform .18s ease, opacity .16s ease, visibility 0s linear .18s;
+  box-shadow: 0 18px 44px rgba(20, 20, 40, .18);
 }
 #side.open, #side.pinned {
-  transform: translateX(0);
-  box-shadow: 0 12px 34px rgba(20, 20, 40, .14);
+  transform: translateX(0) scale(1);
+  opacity: 1; visibility: visible;
+  transition: transform .18s ease, opacity .16s ease, visibility 0s;
 }
 .side-top {
   height: 46px; flex: 0 0 46px; display: flex; align-items: center;

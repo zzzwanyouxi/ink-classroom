@@ -1918,6 +1918,7 @@ window.addEventListener('beforeunload', () => {
 
 /* ==================== 尺寸 ==================== */
 function resize() {
+  if (el.side.classList.contains('open')) positionSidePanel();
   const w = el.noteScroll.clientWidth || 0;
   const h = el.noteScroll.clientHeight || 0;
   if (w === lastW && h === lastH) { recompute(); return; }
@@ -2191,8 +2192,17 @@ el.sideResizer.addEventListener('pointerup', () => { if (sideDrag) { sideDrag = 
 let sidePinned = false;
 let sideTimer = 0;
 
+function positionSidePanel() {
+  if (!el.sideBtn) return;
+  const r = el.sideBtn.getBoundingClientRect();
+  if (!r.width) return;
+  el.side.style.left = Math.round(r.right + 10) + 'px';
+  el.side.style.top = Math.round(r.top - 4) + 'px';
+}
+
 function openSide() {
   clearTimeout(sideTimer);
+  positionSidePanel();
   el.side.classList.add('open');
 }
 function closeSide() {
@@ -2221,6 +2231,8 @@ if (el.edgeHot) el.edgeHot.addEventListener('pointerenter', openSide);
 el.side.addEventListener('pointerenter', openSide);
 el.side.addEventListener('pointerleave', scheduleCloseSide);
 if (el.sideBtn) {
+  el.sideBtn.addEventListener('pointerenter', openSide);
+  el.sideBtn.addEventListener('pointerleave', scheduleCloseSide);
   el.sideBtn.addEventListener('click', toggleSidePin);
   el.sideBtn.classList.toggle('on', sidePinned);
 }
@@ -2305,8 +2317,14 @@ async function boot() {
   afterPageSwitch();
   renderAll();
   syncHistBtns();
+  const forceSideOpen = new URLSearchParams(location.search).has('sideopen');
   openSide();
-  setTimeout(() => { if (!sidePinned) scheduleCloseSide(); }, 1600);
+  if (forceSideOpen) {
+    clearTimeout(sideTimer);
+    el.side.classList.add('open');
+  } else {
+    setTimeout(() => { if (!sidePinned) scheduleCloseSide(); }, 1600);
+  }
   if (window.ResizeObserver) new ResizeObserver(resize).observe(el.noteScroll);
   window.addEventListener('resize', resize);
   resize();
