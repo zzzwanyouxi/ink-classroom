@@ -8,30 +8,6 @@
 </head>
 <body>
 <div id="app">
-  <nav id="rail">
-    <button class="rail-btn on" data-rail="home" title="笔记">
-      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
-        <path d="M6 3.5h8.5L20 9v11.5a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-16a1 1 0 0 1 1-1z"/>
-        <path d="M14 3.5V9h6"/>
-      </svg>
-    </button>
-
-    <button class="rail-btn" data-rail="help" title="快捷键">
-      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
-        <path d="M12 17.5v.01"/>
-        <path d="M9.5 9a2.6 2.6 0 1 1 3.6 2.4c-.7.3-1.1 1-1.1 1.8v.8"/>
-        <circle cx="12" cy="12" r="9"/>
-      </svg>
-    </button>
-    <div class="rail-grow"></div>
-    <button class="rail-btn" data-rail="info" title="关于">
-      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
-        <circle cx="12" cy="12" r="9"/>
-        <path d="M12 11v6"/>
-        <path d="M12 7.5v.01"/>
-      </svg>
-    </button>
-  </nav>
 
   <aside id="side">
     <div class="side-top">
@@ -45,11 +21,14 @@
     <div class="side-foot">
       <span class="foot-link" id="wsBtn" title="选一个文件夹，笔记自动存进去">存文件夹</span>
       <span id="wsStatus" class="foot-note">浏览器存储</span>
-      <span class="foot-link" id="helpBtn">快捷键</span>
+      <span class="foot-link" id="helpLink">快捷键</span>
+      <span class="foot-link" id="aboutLink">关于</span>
     </div>
   </aside>
 
   <div id="sideResizer" title="拖动调整宽度 / 拖到最左收起"></div>
+
+  <div id="edgeHot" title="移到最左边缘打开笔记本"></div>
 
   <main id="main">
     <div id="ribbonHot" title="移到顶部显示工具栏"></div>
@@ -83,6 +62,12 @@
     <div id="body">
       <aside id="docpane">
         <div class="pane-head">
+          <button id="sideBtn" class="pane-icon" title="笔记本（鼠标移到最左边也能打开）">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round">
+              <path d="M6 3.5h8.5L20 9v11.5a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-16a1 1 0 0 1 1-1z"/>
+              <path d="M14 3.5V9h6"/>
+            </svg>
+          </button>
           <span class="ph-label">原卷</span>
           <span id="docname" class="ph-name"></span>
           <div class="grow"></div>

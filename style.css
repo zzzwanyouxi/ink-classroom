@@ -306,10 +306,18 @@ body.present #ribbonHot { display: none; }
 #toast.show { opacity: 1; transform: translate(-50%, 0); }
 
 /* ---------- Codex 式左栏 ---------- */
-#rail {
-  width: 46px; flex: 0 0 46px; background: #f0f0f5; border-right: 1px solid #e3e3ea;
-  display: flex; flex-direction: column; align-items: center; padding: 8px 0 10px; gap: 4px;
+#rail { display: none; }
+
+#edgeHot {
+  position: fixed; left: 0; top: 0; bottom: 0; width: 6px; z-index: 40;
 }
+.pane-icon {
+  width: 22px; height: 22px; flex: 0 0 22px; border: 0; border-radius: 5px;
+  background: transparent; color: #6b6b7b; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; padding: 0;
+}
+.pane-icon:hover { background: #ececf3; color: #4b2fb0; }
+.pane-icon.on { background: #e6e0fb; color: #5b3fd6; }
 .rail-btn {
   width: 32px; height: 32px; border: 0; border-radius: 8px; background: transparent;
   color: #6b6b7b; font-size: 15px; cursor: pointer;
@@ -320,7 +328,7 @@ body.present #ribbonHot { display: none; }
 .rail-grow { flex: 1; }
 
 #side {
-  position: absolute; left: 46px; top: 0; bottom: 0; width: 240px; z-index: 26;
+  position: absolute; left: 0; top: 0; bottom: 0; width: 240px; z-index: 26;
   background: #f7f7fa; border-right: 1px solid #e3e3ea;
   display: flex; flex-direction: column;
   transform: translateX(calc(-100% - 48px));

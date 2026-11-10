@@ -52,7 +52,7 @@ const el = {
   toolGroup: $('toolGroup'), undo: $('undoBtn'), redo: $('redoBtn'), replay: $('replayBtn'),
   shapeBtn: $('shapeBtn'), importBtn: $('importBtn'), docBtn: $('docBtn'),
   exportBtn: $('exportBtn'), presentBtn: $('presentBtn'), fullBtn: $('fullBtn'),
-  body: $('body'), side: $('side'), sideResizer: $('sideResizer'), rail: $('rail'),
+  body: $('body'), side: $('side'), sideResizer: $('sideResizer'), edgeHot: $('edgeHot'), sideBtn: $('sideBtn'),
   docpane: $('docpane'), splitter: $('splitter'),
   docInk: $('docInk'), docCursor: $('docCursor'),
   docScroll: $('docScroll'), docPages: $('docPages'), docEmpty: $('docEmpty'),
@@ -2192,6 +2192,7 @@ function scheduleCloseSide() {
 function toggleSidePin() {
   sidePinned = !sidePinned;
   el.side.classList.toggle('pinned', sidePinned);
+  if (el.sideBtn) el.sideBtn.classList.toggle('on', sidePinned);
   if (sidePinned) {
     openSide();
     toast('侧栏已固定（再点一下取消）');
@@ -2201,10 +2202,13 @@ function toggleSidePin() {
   }
   save();
 }
-el.rail.addEventListener('pointerenter', openSide);
-el.rail.addEventListener('pointerleave', scheduleCloseSide);
+if (el.edgeHot) el.edgeHot.addEventListener('pointerenter', openSide);
 el.side.addEventListener('pointerenter', openSide);
 el.side.addEventListener('pointerleave', scheduleCloseSide);
+if (el.sideBtn) {
+  el.sideBtn.addEventListener('click', toggleSidePin);
+  el.sideBtn.classList.toggle('on', sidePinned);
+}
 
 /* ==================== 工具栏自动隐藏 ==================== */
 let ribbonPinned = false;
@@ -2389,17 +2393,16 @@ function runSelfTest() {
   document.body.appendChild(pre);
 }
 
-document.querySelectorAll('.rail-btn').forEach((b) => {
-  b.addEventListener('click', () => {
-    const r = b.dataset.rail;
-    if (r === 'help') {
-      toast('1-4 切笔 · E 橡皮 · L 套索 · R 直尺 · P 投影 · Ctrl+Z/Y 撤销重做 · Delete 删除选中');
-      return;
-    }
-    if (r === 'info') { toast('课堂笔记 · 左原卷 / 右草稿 · 两边都能写'); return; }
-    toggleSidePin();
+const helpLink = document.getElementById('helpLink');
+if (helpLink) {
+  helpLink.addEventListener('click', () => {
+    toast('1-4 切笔 · E 橡皮 · L 套索 · M 框选 · R 直尺 · H 工具栏 · P 投影 · Ctrl+Z/Y 撤销重做');
   });
-});
+}
+const aboutLink = document.getElementById('aboutLink');
+if (aboutLink) {
+  aboutLink.addEventListener('click', () => toast('课堂笔记 · 左原卷 / 右草稿 · 两边都能写'));
+}
 
 try {
   boot();
