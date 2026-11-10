@@ -1285,6 +1285,21 @@ el.toolGroup.addEventListener('click', (e) => {
   selection.clear();
   renderToolbar(); redraw();
 });
+if (el.selbar) {
+  el.selbar.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-act]');
+    if (!b) return;
+    e.preventDefault();
+    const act = b.dataset.act;
+    if (act === 'disth') distSel('h');
+    else if (act === 'distv') distSel('v');
+    else if (act === 'rotate') rotateSel();
+    else if (act === 'copy') copySel();
+    else if (act === 'delete') deleteSel();
+    else alignSel(act);
+  });
+}
+
 el.shapeBtn.addEventListener('click', () => {
   shapeSnap = !shapeSnap;
   toast(shapeSnap ? '形状识别：开' : '形状识别：关');
@@ -2368,6 +2383,12 @@ function runSelfTest() {
   log('marqueeSel', String(selection.size));
   tool = 'pen';
   renderToolbar();
+
+  // 删除按钮 / Delete 键
+  const beforeDel = pageNow().strokes.length;
+  const delBtn = el.selbar ? el.selbar.querySelector('[data-act="delete"]') : null;
+  if (delBtn) delBtn.click();
+  log('delBtn', beforeDel + '->' + pageNow().strokes.length + ' sel=' + selection.size);
 
   // 默认笔：右键笔槽 2
   const penBtn = el.penGroup.querySelector('[data-pen="1"]');
