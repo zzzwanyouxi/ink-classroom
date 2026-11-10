@@ -627,7 +627,7 @@ function handleAt(p, bb) {
 }
 function updateSelBar() {
   if (!el.selbar) return;
-  const bb = selection.size && tool === 'lasso' ? selBBox() : null;
+  const bb = selection.size && isSelectTool() ? selBBox() : null;
   if (!bb) { el.selbar.style.display = 'none'; return; }
   el.selbar.style.display = 'flex';
   const bw = el.selbar.offsetWidth || 330;
@@ -698,7 +698,7 @@ function redraw() {
     bgCtx.strokeStyle = '#6d4ae0';
     bgCtx.strokeRect(bb.minX - 6 / scale, bb.minY - 6 / scale, bb.maxX - bb.minX + 12 / scale, bb.maxY - bb.minY + 12 / scale);
     bgCtx.setLineDash([]);
-    if (tool === 'lasso') {
+    if (isSelectTool()) {
       const hs = 9 / scale;
       for (const h of handlePoints(bb)) {
         bgCtx.fillStyle = '#ffffff';
@@ -731,6 +731,17 @@ function renderLive() {
   liveCtx.rect(0, 0, p.w, p.h);
   liveCtx.clip();
   if (drawing) drawStroke(liveCtx, drawing);
+  if (marquee) {
+    const x0 = Math.min(marquee.a.x, marquee.b.x);
+    const y0 = Math.min(marquee.a.y, marquee.b.y);
+    const w = Math.abs(marquee.b.x - marquee.a.x);
+    const h = Math.abs(marquee.b.y - marquee.a.y);
+    liveCtx.fillStyle = 'rgba(37, 99, 235, 0.10)';
+    liveCtx.fillRect(x0, y0, w, h);
+    liveCtx.strokeStyle = '#2563eb';
+    liveCtx.lineWidth = 1.2 / scale;
+    liveCtx.strokeRect(x0, y0, w, h);
+  }
   if (lassoPts && lassoPts.length > 1) {
     liveCtx.setLineDash([6 / scale, 4 / scale]);
     liveCtx.lineWidth = 1.6 / scale;
@@ -792,6 +803,7 @@ function syncHistBtns() {
 let drawing = null;
 let eraseSet = null;
 let lassoPts = null;
+let marquee = null;
 let moving = null;
 let lastPenAt = 0;
 let replaying = { active: false, count: 0, total: 0, raf: 0 };
@@ -809,6 +821,7 @@ function penWidth(pen) {
   return pen.type === 'highlighter' ? base * HIGH_MUL : base;
 }
 function currentPen() { return pens[activePen] || pens[0]; }
+function isSelectTool() { return tool === 'lasso' || tool === 'marquee'; }
 
 function placeCursor(e) {
   const r = el.noteScroll.getBoundingClientRect();
@@ -817,7 +830,7 @@ function placeCursor(e) {
   el.penCursor.style.display = 'block';
 }
 function setCursorShape() {
-  el.penCursor.className = tool === 'eraser' ? 'eraser' : tool === 'lasso' ? 'lasso' : '';
+  el.penCursor.className = tool === 'eraser' ? 'eraser' : isSelectTool() ? 'lasso' : '';
 }
 
 let warnedPointer = false;
@@ -853,7 +866,7 @@ function onDown(e) {
     eraseAt(q.x, q.y);
     return;
   }
-  if (tool === 'lasso') {
+  if (isSelectTool()) {
     const bb = selBBox();
     if (bb) {
       const corner = handleAt(q, bb);
@@ -874,7 +887,8 @@ function onDown(e) {
       }
       selection.clear();
     }
-    lassoPts = [q];
+    if (tool === 'lasso') lassoPts = [q];
+    else marquee = { a: q, b: q };
     renderLive(); redraw();
     return;
   }
@@ -937,6 +951,7 @@ function onMove(e) {
     return;
   }
   if (eraseSet) { eraseAt(q.x, q.y); return; }
+  if (marquee) { marquee.b = q; renderLive(); return; }
   if (lassoPts) {
     const last = lassoPts[lassoPts.length - 1];
     if (Math.hypot(q.x - last.x, q.y - last.y) > 1.5 / scale) { lassoPts.push(q); renderLive(); }
@@ -993,6 +1008,7 @@ function onUp() {
   if (moving) { moving = null; save(); return; }
   if (eraseSet) { eraseSet = null; save(); return; }
   if (lassoPts) { applyLasso(); return; }
+  if (marquee) { applyMarquee(); return; }
   if (drawing) finishStroke();
 }
 
@@ -1010,6 +1026,25 @@ function applyLasso() {
   redraw();
   if (selection.size) toast('已选中 ' + selection.size + ' 条笔迹');
 }
+function applyMarquee() {
+  const p = pageNow();
+  const m = marquee;
+  marquee = null;
+  if (!p || !m) { redraw(); return; }
+  const x0 = Math.min(m.a.x, m.b.x);
+  const x1 = Math.max(m.a.x, m.b.x);
+  const y0 = Math.min(m.a.y, m.b.y);
+  const y1 = Math.max(m.a.y, m.b.y);
+  if (x1 - x0 < 4 / scale || y1 - y0 < 4 / scale) { redraw(); return; }
+  selection.clear();
+  for (const s of p.strokes) {
+    const b = getBB(s);
+    if (b.maxX >= x0 && b.minX <= x1 && b.maxY >= y0 && b.minY <= y1) selection.add(s.id);
+  }
+  redraw();
+  if (selection.size) toast('框选 ' + selection.size + ' 条笔迹，可拖动 / 缩放 / 对齐 / 删除');
+}
+
 function pointInPoly(pt, poly) {
   let inside = false;
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
@@ -1610,6 +1645,7 @@ function setZoom(z) {
   scrollTop = el.noteScroll.scrollTop;
   redraw();
   updateZoomLabel();
+  requestAnimationFrame(resize);
 }
 el.zoomIn.addEventListener('click', () => setZoom(zoom * 1.2));
 el.zoomOut.addEventListener('click', () => setZoom(zoom / 1.2));
@@ -1756,6 +1792,7 @@ window.addEventListener('keydown', (e) => {
   if (e.key === '4') { activePen = 3; tool = 'pen'; renderToolbar(); save(); return; }
   if (e.key.toLowerCase() === 'e') { tool = 'eraser'; renderToolbar(); return; }
   if (e.key.toLowerCase() === 'l') { tool = 'lasso'; renderToolbar(); return; }
+  if (e.key.toLowerCase() === 'm') { tool = 'marquee'; renderToolbar(); return; }
   if (e.key.toLowerCase() === 'r') { tool = 'ruler'; renderToolbar(); return; }
   if (e.key.toLowerCase() === 'h') { togglePin(); return; }
   if (e.key.toLowerCase() === 'f') { toggleFull(); return; }
@@ -1794,6 +1831,8 @@ function resize() {
   for (const c of [el.bg, el.live]) {
     c.width = Math.round(w * dpr);
     c.height = Math.round(h * dpr);
+    c.style.width = w + 'px';
+    c.style.height = h + 'px';
   }
   recompute();
   ensureMinHeight();
@@ -1873,6 +1912,8 @@ function docCanvasSize() {
   docDpr = Math.min(window.devicePixelRatio || 1, 2.5);
   el.docInk.width = Math.round(w * docDpr);
   el.docInk.height = Math.round(h * docDpr);
+  el.docInk.style.width = w + 'px';
+  el.docInk.style.height = h + 'px';
 }
 
 function docHit(clientX, clientY) {
@@ -2114,7 +2155,7 @@ function boot() {
   afterPageSwitch();
   renderAll();
   syncHistBtns();
-  if (window.ResizeObserver) new ResizeObserver(resize).observe(el.notepane);
+  if (window.ResizeObserver) new ResizeObserver(resize).observe(el.noteScroll);
   window.addEventListener('resize', resize);
   resize();
   setTimeout(resize, 150);
@@ -2179,12 +2220,26 @@ function runSelfTest() {
   selectPage(pageA);
   log('viewMem', 'zoom=' + zoom.toFixed(2) + ' top=' + el.noteScroll.scrollTop);
 
+  // 框选
+  tool = 'marquee';
+  renderToolbar();
+  const mr = el.noteScroll.getBoundingClientRect();
+  const mo = (x, y) => ({ pointerId: 5, isPrimary: true, pointerType: 'mouse', clientX: x, clientY: y, pressure: 0.5, bubbles: true, cancelable: true, buttons: 1 });
+  el.noteScroll.dispatchEvent(new PointerEvent('pointerdown', mo(mr.left + 8, mr.top + 8)));
+  el.noteScroll.dispatchEvent(new PointerEvent('pointermove', mo(mr.left + 220, mr.top + 160)));
+  el.noteScroll.dispatchEvent(new PointerEvent('pointerup', mo(mr.left + 220, mr.top + 160)));
+  log('marqueeSel', String(selection.size));
+  tool = 'pen';
+  renderToolbar();
+
   // 默认笔：右键笔槽 2
   const penBtn = el.penGroup.querySelector('[data-pen="1"]');
   if (penBtn) penBtn.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
   log('defaultPen', String(defaultPenIdx));
 
   setZoom(1.8);
+  const bgRect = el.bg.getBoundingClientRect();
+  log('canvasFit', bgRect.width.toFixed(1) + 'x' + bgRect.height.toFixed(1) + ' vs ' + (el.bg.width / dpr).toFixed(1) + 'x' + (el.bg.height / dpr).toFixed(1));
   log('hscroll', 'sw=' + el.noteScroll.scrollWidth + ' cw=' + el.noteScroll.clientWidth + ' sl=' + el.noteScroll.scrollLeft + ' scale=' + scale.toFixed(2));
   setZoom(1);
 
