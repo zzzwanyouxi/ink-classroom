@@ -1,0 +1,18 @@
+{
+  "name": "ink-classroom",
+  "productName": "课堂笔记",
+  "version": "0.1.0",
+  "private": true,
+  "description": "课堂手写白板：左原卷 / 右草稿，无限画布",
+  "main": "desktop/main.js",
+  "author": "zzzwanyouxi",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-packager . 课堂笔记 --platform=win32 --arch=x64 --out=dist --overwrite --icon=desktop/app.ico --ignore=\"^/dist\" --ignore=\"^/node_modules\" --ignore=\"^/\\.git\""
+  },
+  "devDependencies": {
+    "electron": "^45.2.3",
+    "@electron/packager": "^18.3.6"
+  }
+}

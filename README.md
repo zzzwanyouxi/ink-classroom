@@ -35,6 +35,25 @@
 
 ## 打开
 
+### 桌面版（推荐）
+
+```
+npm install          # 第一次
+npm start            # 开发模式直接跑
+npm run pack         # 打包成 dist/课堂笔记-win32-x64/课堂笔记.exe
+```
+
+打包后双击 `课堂笔记.exe` 即可，没有地址栏、没有浏览器标签，任务栏显示独立图标。
+
+**本机已安装版本**：`%LOCALAPPDATA%\Programs\课堂笔记`，桌面和开始菜单都有「课堂笔记」快捷方式。
+
+- 数据位置：`%APPDATA%\课堂笔记`（和浏览器版不互通，各自独立）
+- 重新打包：`npm run pack`，然后把 `dist\课堂笔记-win32-x64` 里的内容覆盖到安装目录
+- 卸载：删掉安装目录 + 两个快捷方式；数据目录想清就一起删
+
+桌面版用 `app://local` 协议加载页面，好处是 origin 稳定，localStorage / IndexedDB 能正常存（`file://` 下 IndexedDB 会被禁）。
+
+
 ```
 # 直接双击 index.html，或起本地服务（推荐，IndexedDB 才能持久化原卷）
 python -m http.server 8000
