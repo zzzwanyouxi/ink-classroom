@@ -54,7 +54,7 @@ const el = {
   exportBtn: $('exportBtn'), presentBtn: $('presentBtn'), fullBtn: $('fullBtn'),
   body: $('body'), side: $('side'), sideResizer: $('sideResizer'), sideBtn: $('sideBtn'),
   docpane: $('docpane'), splitter: $('splitter'),
-  docInk: $('docInk'), docCursor: $('docCursor'),
+  docInk: $('docInk'), docCursor: $('docCursor'), docSelbar: $('docSelbar'),
   docScroll: $('docScroll'), docPages: $('docPages'), docEmpty: $('docEmpty'),
   docname: $('docname'), syncBtn: $('syncBtn'), docZoomIn: $('docZoomIn'), docZoomOut: $('docZoomOut'),
   notepane: $('notepane'), noteScroll: $('noteScroll'), noteSpacer: $('noteSpacer'),
@@ -116,6 +116,7 @@ function normalizePage(p) {
   if (!Array.isArray(p.strokes)) p.strokes = [];
   if (p.doc === undefined) p.doc = null;
   if (!Array.isArray(p.docInk)) p.docInk = [];
+  p.docInk.forEach((s) => { if (!s.id) s.id = uid(); if (!s.pts) s.pts = []; });
   if (!p.paper) p.paper = 'plain';
   p.strokes.forEach((s) => { if (!s.id) s.id = uid(); if (s.tool === 'pen') s.tool = 'ballpoint'; if (!s.pts) s.pts = []; s.bb = null; });
 }
@@ -835,7 +836,11 @@ function pushHist() {
   if (!p) return;
   let h = hist.get(state.sel.page);
   if (!h) { h = { u: [], r: [] }; hist.set(state.sel.page, h); }
-  h.u.push({ s: p.strokes.slice(), d: (p.docInk || []).slice() });
+  h.u.push({
+    s: p.strokes.slice(),
+    d: (p.docInk || []).slice(),
+    doc: p.doc ? { name: p.doc.name, pages: p.doc.pages.slice() } : null,
+  });
   if (h.u.length > 100) h.u.shift();
   h.r.length = 0;
   syncHistBtns();
@@ -844,23 +849,35 @@ function undo() {
   const h = hist.get(state.sel.page);
   const p = pageNow();
   if (!h || !p || !h.u.length) return;
-  h.r.push({ s: p.strokes.slice(), d: (p.docInk || []).slice() });
+  h.r.push({
+    s: p.strokes.slice(),
+    d: (p.docInk || []).slice(),
+    doc: p.doc ? { name: p.doc.name, pages: p.doc.pages.slice() } : null,
+  });
   const prev = h.u.pop();
   p.strokes = prev.s;
   p.docInk = prev.d;
+  if (prev.doc !== undefined) p.doc = prev.doc;
   selection.clear();
-  redraw(); drawDocInk(); save(); syncHistBtns();
+  docSel.clear();
+  renderDoc(); redraw(); save(); syncHistBtns();
 }
 function redo() {
   const h = hist.get(state.sel.page);
   const p = pageNow();
   if (!h || !p || !h.r.length) return;
-  h.u.push({ s: p.strokes.slice(), d: (p.docInk || []).slice() });
+  h.u.push({
+    s: p.strokes.slice(),
+    d: (p.docInk || []).slice(),
+    doc: p.doc ? { name: p.doc.name, pages: p.doc.pages.slice() } : null,
+  });
   const next = h.r.pop();
   p.strokes = next.s;
   p.docInk = next.d;
+  if (next.doc !== undefined) p.doc = next.doc;
   selection.clear();
-  redraw(); drawDocInk(); save(); syncHistBtns();
+  docSel.clear();
+  renderDoc(); redraw(); save(); syncHistBtns();
 }
 function syncHistBtns() {
   const h = hist.get(state.sel.page);
@@ -1458,6 +1475,8 @@ function saveView() {
 
 function afterPageSwitch(fresh) {
   selection.clear();
+  docSel.clear();
+  updateDocSelBar();
   const p = pageNow();
   const v = (!fresh && p && p.view) ? p.view : null;
   zoom = (v && v.zoom) ? v.zoom : 1;
@@ -1657,16 +1676,37 @@ function renderDoc() {
   drawDocInk();
 }
 
-function setDoc(name, pages, silent) {
+function setDoc(name, pages, silent, mode, atIndex) {
   const p = pageNow();
   if (!p || !pages.length) return;
-  if (!silent && p.doc && p.doc.pages.length) {
-    if (!confirm('替换左侧原卷？')) return;
+  const has = !!(p.doc && p.doc.pages && p.doc.pages.length);
+  const append = has && mode === 'append';
+  if (has && !append && !silent) {
+    if (!confirm('替换左侧原卷？（共 ' + p.doc.pages.length + ' 页，批注也会一并去掉）')) return;
   }
-  p.doc = {
-    name: name,
-    pages: pages.map((pg) => { const id = uid(); putAsset(id, pg.url); return { asset: id, w: pg.w, h: pg.h }; }),
-  };
+  const mapped = pages.map((pg) => { const id = uid(); putAsset(id, pg.url); return { asset: id, w: pg.w, h: pg.h }; });
+  pushHist();
+
+  if (append) {
+    const at = (typeof atIndex === 'number' && atIndex >= 0)
+      ? Math.min(atIndex, p.doc.pages.length)
+      : p.doc.pages.length;
+    p.doc.pages.splice(at, 0, ...mapped);
+    renderDoc();
+    save();
+    const img = docImgEls[at];
+    if (img) {
+      const sr = el.docScroll.getBoundingClientRect();
+      const r = img.getBoundingClientRect();
+      el.docScroll.scrollTop = Math.max(0, el.docScroll.scrollTop + (r.top - sr.top) - 8);
+    }
+    drawDocInk();
+    toast('已插入 ' + mapped.length + ' 页（原卷共 ' + p.doc.pages.length + ' 页）');
+    return;
+  }
+
+  p.doc = { name: name, pages: mapped };
+  docSel.clear();
   el.docScroll.scrollTop = 0;
   renderDoc();
   save();
@@ -1810,7 +1850,10 @@ document.addEventListener('fullscreenchange', () => {
 });
 
 /* ==================== 导入 ==================== */
-async function importFiles(files) {
+async function importFiles(files, opts) {
+  const o = opts || {};
+  const mode = o.replace ? 'replace' : 'append';
+  const atIndex = (typeof o.atIndex === 'number') ? o.atIndex : undefined;
   const list = Array.prototype.slice.call(files || []);
   for (const f of list) {
     const name = (f.name || '').toLowerCase();
@@ -1818,15 +1861,15 @@ async function importFiles(files) {
       if (f.type && f.type.indexOf('image/') === 0) {
         toast('正在插入图片…');
         const pages = await window.InkImport.imagePages(f);
-        setDoc(stripExt(f.name || '图片'), pages);
+        setDoc(stripExt(f.name || '图片'), pages, false, mode, atIndex);
       } else if (name.endsWith('.pdf')) {
         toast('正在解析 PDF…');
         const pages = await window.InkImport.pdfPages(f, (i, t) => toast('渲染 PDF ' + i + '/' + t));
-        setDoc(stripExt(f.name || 'PDF'), pages);
+        setDoc(stripExt(f.name || 'PDF'), pages, false, mode, atIndex);
       } else if (name.endsWith('.docx')) {
         toast('正在解析 Word…');
         const pages = await window.InkImport.docxPages(f);
-        setDoc(stripExt(f.name || 'Word'), pages);
+        setDoc(stripExt(f.name || 'Word'), pages, false, mode, atIndex);
       } else if (name.endsWith('.doc')) {
         toast('旧版 .doc 暂不支持，请另存为 .docx 或 PDF');
       } else {
@@ -1860,7 +1903,13 @@ window.addEventListener('drop', (e) => {
   dragDepth = 0;
   el.dropmask.classList.remove('show');
   const files = e.dataTransfer && e.dataTransfer.files;
-  if (files && files.length) importFiles(files);
+  if (!files || !files.length) return;
+  const hit = docHit(e.clientX, e.clientY);
+  importFiles(files, {
+    replace: e.shiftKey,
+    atIndex: hit ? hit.idx + 1 : undefined,
+  });
+  if (!e.shiftKey) toast('拖进来是追加页；按住 Shift 拖入 = 替换整份原卷');
 });
 window.addEventListener('paste', (e) => {
   const items = e.clipboardData && e.clipboardData.files;
@@ -1900,10 +1949,12 @@ window.addEventListener('keydown', (e) => {
   if (e.key.toLowerCase() === 'f') { toggleFull(); return; }
   if (e.key.toLowerCase() === 'p') { e.preventDefault(); document.body.classList.contains('present') ? exitPresent() : enterPresent(); return; }
   if (e.key === 'Escape') {
+    if (docSel.size) { docSel.clear(); drawDocInk(); updateDocSelBar(); return; }
     if (selection.size) { selection.clear(); redraw(); } else exitPresent();
     return;
   }
   if (e.key === 'Delete' || e.key === 'Backspace') {
+    if (docSel.size) { e.preventDefault(); docDeleteSel(); return; }
     if (!selection.size) return;
     e.preventDefault();
     deleteSel();
@@ -2062,7 +2113,136 @@ function drawDocInk() {
     const img = docImgEls[docDrawing.pageIdx];
     if (img) { docInkTransform(ctx, img); drawStroke(ctx, docDrawing); }
   }
+
+  /* 选中框 / 框选框（屏幕坐标） */
+  const sr2 = el.docScroll.getBoundingClientRect();
+  ctx.setTransform(docDpr, 0, 0, docDpr, 0, 0);
+  if (docSel.size) {
+    ctx.save();
+    ctx.setLineDash([5, 4]);
+    ctx.lineWidth = 1.4;
+    ctx.strokeStyle = '#6d4ae0';
+    for (const s of (p.docInk || [])) {
+      if (!docSel.has(s.id)) continue;
+      const b = docStrokeScreenBB(s);
+      if (!b) continue;
+      ctx.strokeRect(b.minX - sr2.left - 3, b.minY - sr2.top - 3, (b.maxX - b.minX) + 6, (b.maxY - b.minY) + 6);
+    }
+    ctx.restore();
+  }
+  if (docMarquee) {
+    const x0 = Math.min(docMarquee.a.x, docMarquee.b.x) - sr2.left;
+    const y0 = Math.min(docMarquee.a.y, docMarquee.b.y) - sr2.top;
+    const w = Math.abs(docMarquee.b.x - docMarquee.a.x);
+    const h = Math.abs(docMarquee.b.y - docMarquee.a.y);
+    ctx.fillStyle = 'rgba(37, 99, 235, 0.10)';
+    ctx.fillRect(x0, y0, w, h);
+    ctx.strokeStyle = '#2563eb';
+    ctx.lineWidth = 1.2;
+    ctx.strokeRect(x0, y0, w, h);
+  }
   ctx.setTransform(1, 0, 0, 1, 0, 0);
+  updateDocSelBar();
+}
+
+/* ---- 原卷批注的框选 / 移动 / 删除 ---- */
+let docSel = new Set();
+let docMarquee = null;
+let docMoving = null;
+
+function docStrokeScreenBB(s) {
+  const img = docImgEls[s.pageIdx];
+  if (!img) return null;
+  const r = img.getBoundingClientRect();
+  if (!r.width) return null;
+  const k = r.width / DOC_W;
+  if (!k) return null;
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const pt of s.pts) {
+    const x = r.left + pt.x * k;
+    const y = r.top + pt.y * k;
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  }
+  if (!isFinite(minX)) return null;
+  return { minX: minX, maxX: maxX, minY: minY, maxY: maxY, k: k, rect: r };
+}
+
+function docSelBox() {
+  const p = pageNow();
+  if (!p || !docSel.size) return null;
+  let u = null;
+  for (const s of (p.docInk || [])) {
+    if (!docSel.has(s.id)) continue;
+    const b = docStrokeScreenBB(s);
+    if (!b) continue;
+    if (!u) u = { minX: b.minX, maxX: b.maxX, minY: b.minY, maxY: b.maxY };
+    else {
+      u.minX = Math.min(u.minX, b.minX);
+      u.maxX = Math.max(u.maxX, b.maxX);
+      u.minY = Math.min(u.minY, b.minY);
+      u.maxY = Math.max(u.maxY, b.maxY);
+    }
+  }
+  return u;
+}
+
+function docHitSelection(cx, cy) {
+  const p = pageNow();
+  if (!p || !docSel.size) return false;
+  for (const s of (p.docInk || [])) {
+    if (!docSel.has(s.id)) continue;
+    const b = docStrokeScreenBB(s);
+    if (!b) continue;
+    if (cx >= b.minX - 8 && cx <= b.maxX + 8 && cy >= b.minY - 8 && cy <= b.maxY + 8) return true;
+  }
+  return false;
+}
+
+function updateDocSelBar() {
+  if (!el.docSelbar) return;
+  const box = docSelBox();
+  if (!box) { el.docSelbar.style.display = 'none'; return; }
+  const sr = el.docScroll.getBoundingClientRect();
+  el.docSelbar.style.display = 'flex';
+  const bw = el.docSelbar.offsetWidth || 150;
+  const left = clamp(box.minX - sr.left, 8, Math.max(8, sr.width - bw - 8));
+  const top = clamp(box.minY - sr.top - 40, 8, Math.max(8, sr.height - 40));
+  el.docSelbar.style.left = Math.round(left) + 'px';
+  el.docSelbar.style.top = Math.round(top) + 'px';
+}
+
+function applyDocMarquee() {
+  const p = pageNow();
+  const m = docMarquee;
+  docMarquee = null;
+  if (!p || !m) { drawDocInk(); return; }
+  const x0 = Math.min(m.a.x, m.b.x), x1 = Math.max(m.a.x, m.b.x);
+  const y0 = Math.min(m.a.y, m.b.y), y1 = Math.max(m.a.y, m.b.y);
+  docSel.clear();
+  if (x1 - x0 < 4 && y1 - y0 < 4) { drawDocInk(); updateDocSelBar(); return; }
+  for (const s of (p.docInk || [])) {
+    const b = docStrokeScreenBB(s);
+    if (!b) continue;
+    if (b.maxX >= x0 && b.minX <= x1 && b.maxY >= y0 && b.minY <= y1) docSel.add(s.id);
+  }
+  drawDocInk();
+  updateDocSelBar();
+  if (docSel.size) toast('已选中 ' + docSel.size + ' 条原卷批注，可拖动 / Delete 删除');
+}
+
+function docDeleteSel() {
+  const p = pageNow();
+  if (!p || !docSel.size) return;
+  pushHist();
+  p.docInk = (p.docInk || []).filter((s) => !docSel.has(s.id));
+  docSel.clear();
+  drawDocInk();
+  updateDocSelBar();
+  save();
+  toast('已删除所选批注');
 }
 
 function docCursorMove(e) {
@@ -2071,7 +2251,7 @@ function docCursorMove(e) {
   el.docCursor.style.left = (e.clientX - sr.left) + 'px';
   el.docCursor.style.top = (e.clientY - sr.top) + 'px';
   el.docCursor.style.display = 'block';
-  el.docCursor.className = tool === 'eraser' ? 'eraser' : '';
+  el.docCursor.className = tool === 'eraser' ? 'eraser' : isSelectTool() ? 'lasso' : '';
 }
 
 function docEraseAt(cx, cy) {
@@ -2108,12 +2288,32 @@ function docDown(e) {
   e.preventDefault();
   warnIfMouse(e);
   if (!p.doc) { toast('先把 PDF / 图片放到左边'); return; }
-  const q = docLocal(e.clientX, e.clientY);
-  if (!q) return;
   try { el.docScroll.setPointerCapture(e.pointerId); } catch (err) {}
   docCursorMove(e);
-  if (tool === 'eraser') { pushHist(); docErase = new Set(); docEraseAt(e.clientX, e.clientY); return; }
-  if (tool === 'lasso') { toast('原卷区先不支持套索，直接拿笔批注就行'); return; }
+
+  if (isSelectTool()) {
+    if (tool === 'lasso') toast('原卷区用「框选」（M）更顺手');
+    if (docHitSelection(e.clientX, e.clientY)) {
+      pushHist();
+      const origin = new Map();
+      for (const s of (p.docInk || [])) {
+        if (!docSel.has(s.id)) continue;
+        const b = docStrokeScreenBB(s);
+        if (!b) continue;
+        origin.set(s.id, { pts: s.pts.map((t) => ({ x: t.x, y: t.y, p: t.p })), k: b.k });
+      }
+      docMoving = { startX: e.clientX, startY: e.clientY, origin: origin };
+      return;
+    }
+    if (docSel.size) { docSel.clear(); updateDocSelBar(); }
+    docMarquee = { a: { x: e.clientX, y: e.clientY }, b: { x: e.clientX, y: e.clientY } };
+    drawDocInk();
+    return;
+  }
+
+  const q = docLocal(e.clientX, e.clientY);
+  if (!q) return;
+  if (tool === 'eraser') { pushHist(); docErase = new Set(); docSel.clear(); docEraseAt(e.clientX, e.clientY); return; }
   const pen = currentPen();
   const isRuler = tool === 'ruler';
   docDrawing = {
@@ -2130,6 +2330,25 @@ function docDown(e) {
 function docMove(e) {
   if (e.pointerType === 'touch' && performance.now() - docLastPenAt < 1200) return;
   docCursorMove(e);
+  if (docMoving) {
+    const dx = e.clientX - docMoving.startX;
+    const dy = e.clientY - docMoving.startY;
+    const p = pageNow();
+    if (p) {
+      for (const s of (p.docInk || [])) {
+        const o = docMoving.origin.get(s.id);
+        if (!o) continue;
+        s.pts = o.pts.map((pt) => ({ x: pt.x + dx / o.k, y: pt.y + dy / o.k, p: pt.p }));
+      }
+    }
+    drawDocInk();
+    return;
+  }
+  if (docMarquee) {
+    docMarquee.b = { x: e.clientX, y: e.clientY };
+    drawDocInk();
+    return;
+  }
   if (docErase) { docEraseAt(e.clientX, e.clientY); return; }
   if (!docDrawing) return;
   const co = (typeof e.getCoalescedEvents === 'function' && e.getCoalescedEvents()) || [];
@@ -2145,6 +2364,8 @@ function docMove(e) {
 }
 
 function docUp() {
+  if (docMoving) { docMoving = null; drawDocInk(); save(); updateDocSelBar(); return; }
+  if (docMarquee) { applyDocMarquee(); return; }
   if (docErase) { docErase = null; drawDocInk(); save(); return; }
   if (!docDrawing) return;
   const s = docDrawing;
@@ -2163,6 +2384,16 @@ function docUp() {
   p.docInk.push(s);
   drawDocInk();
   save();
+}
+
+if (el.docSelbar) {
+  el.docSelbar.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-dact]');
+    if (!b) return;
+    e.preventDefault();
+    if (b.dataset.dact === 'delete') docDeleteSel();
+    else { docSel.clear(); drawDocInk(); updateDocSelBar(); }
+  });
 }
 
 el.docScroll.addEventListener('pointerdown', docDown);
@@ -2322,6 +2553,16 @@ async function boot() {
   afterPageSwitch();
   renderAll();
   syncHistBtns();
+  if (new URLSearchParams(location.search).has('docsel')) {
+    setTimeout(() => {
+      const p = pageNow();
+      if (p && p.docInk) {
+        p.docInk.forEach((s) => docSel.add(s.id));
+        drawDocInk();
+        updateDocSelBar();
+      }
+    }, 900);
+  }
   if (new URLSearchParams(location.search).has('sideopen')) {
     clearTimeout(sideTimer);
     positionSidePanel();
@@ -2404,8 +2645,43 @@ function runSelfTest() {
   tool = 'pen';
   renderToolbar();
 
+  // 原卷：追加页面
+  const dBefore = (pageNow().doc || { pages: [] }).pages.length;
+  const tc = document.createElement('canvas');
+  tc.width = 800; tc.height = 600;
+  const tctx = tc.getContext('2d');
+  tctx.fillStyle = '#ffffff'; tctx.fillRect(0, 0, 800, 600);
+  tctx.fillStyle = '#1c2026'; tctx.font = '30px sans-serif'; tctx.fillText('追加测试页', 40, 80);
+  setDoc('追加测试', [{ w: 800, h: 600, url: tc.toDataURL('image/png') }], false, 'append');
+  log('docAppend', dBefore + '->' + pageNow().doc.pages.length);
+  undo();
+  log('docUndo', String(pageNow().doc.pages.length));
+  redo();
+  log('docRedo', String(pageNow().doc.pages.length));
+
+  // 原卷：框选 + 删除
+  tool = 'marquee';
+  renderToolbar();
+  if (docImgEls.length && pageNow().docInk.length) {
+    const d0 = docImgEls[0].getBoundingClientRect();
+    const po = (x, y) => ({ pointerId: 7, isPrimary: true, pointerType: 'mouse', clientX: x, clientY: y, pressure: 0.5, bubbles: true, cancelable: true, buttons: 1 });
+    el.docScroll.dispatchEvent(new PointerEvent('pointerdown', po(d0.left + 4, d0.top + 4)));
+    el.docScroll.dispatchEvent(new PointerEvent('pointermove', po(d0.right - 4, d0.bottom - 4)));
+    el.docScroll.dispatchEvent(new PointerEvent('pointerup', po(d0.right - 4, d0.bottom - 4)));
+    log('docSel', String(docSel.size));
+    if (docSel.size) {
+      const inkBefore = pageNow().docInk.length;
+      const dbtn = el.docSelbar ? el.docSelbar.querySelector('[data-dact="delete"]') : null;
+      if (dbtn) dbtn.click();
+      log('docDel', inkBefore + '->' + pageNow().docInk.length);
+    }
+  }
+  tool = 'pen';
+  renderToolbar();
+
   // 删除按钮 / Delete 键
   const beforeDel = pageNow().strokes.length;
+  selection = new Set(pageNow().strokes.slice(0, 2).map((s) => s.id));
   const delBtn = el.selbar ? el.selbar.querySelector('[data-act="delete"]') : null;
   if (delBtn) delBtn.click();
   log('delBtn', beforeDel + '->' + pageNow().strokes.length + ' sel=' + selection.size);
@@ -2426,7 +2702,7 @@ function runSelfTest() {
   pageNow().strokes.push({ id: uid(), tool: 'ballpoint', color: '#1c2026', width: 3, bb: null, pts: [{ x: 120, y: deep, p: 0.7 }, { x: 260, y: deep + 30, p: 0.7 }] });
   ensureHeight();
   log('grow', before + ' -> ' + pageNow().h);
-  const docOk = (pageNow().docInk || []).length >= (pageNow().doc ? 1 : 0);
+  const docOk = Array.isArray(pageNow().docInk) && !!pageNow().doc;
   out.push('RESULT ' + (pageNow().h > before && afterCleanup === baseStrokes + 3 && docOk ? 'PASS' : 'FAIL'));
   const pre = document.createElement('pre');
   pre.id = 'testout';
