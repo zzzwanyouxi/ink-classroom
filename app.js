@@ -1300,6 +1300,9 @@ el.toolGroup.addEventListener('click', (e) => {
   const t = b.dataset.tool;
   tool = tool === t ? 'pen' : t;
   selection.clear();
+  docSel.clear();
+  updateDocSelBar();
+  drawDocInk();
   renderToolbar(); redraw();
 });
 if (el.selbar) {
@@ -1692,6 +1695,10 @@ function setDoc(name, pages, silent, mode, atIndex) {
       ? Math.min(atIndex, p.doc.pages.length)
       : p.doc.pages.length;
     p.doc.pages.splice(at, 0, ...mapped);
+    for (const s of (p.docInk || [])) {
+      if (s.pageIdx >= at) s.pageIdx += mapped.length;
+    }
+    docSel.clear();
     renderDoc();
     save();
     const img = docImgEls[at];
@@ -1706,6 +1713,7 @@ function setDoc(name, pages, silent, mode, atIndex) {
   }
 
   p.doc = { name: name, pages: mapped };
+  p.docInk = [];
   docSel.clear();
   el.docScroll.scrollTop = 0;
   renderDoc();
@@ -2654,6 +2662,10 @@ function runSelfTest() {
   tctx.fillStyle = '#1c2026'; tctx.font = '30px sans-serif'; tctx.fillText('追加测试页', 40, 80);
   setDoc('追加测试', [{ w: 800, h: 600, url: tc.toDataURL('image/png') }], false, 'append');
   log('docAppend', dBefore + '->' + pageNow().doc.pages.length);
+  const idxBefore = pageNow().docInk.length ? pageNow().docInk[0].pageIdx : -1;
+  setDoc('插到开头', [{ w: 400, h: 300, url: tc.toDataURL('image/png') }], false, 'append', 0);
+  log('docShift', idxBefore + '->' + (pageNow().docInk.length ? pageNow().docInk[0].pageIdx : 'none'));
+  undo();
   undo();
   log('docUndo', String(pageNow().doc.pages.length));
   redo();
@@ -2663,7 +2675,8 @@ function runSelfTest() {
   tool = 'marquee';
   renderToolbar();
   if (docImgEls.length && pageNow().docInk.length) {
-    const d0 = docImgEls[0].getBoundingClientRect();
+    const pIdx0 = pageNow().docInk[0].pageIdx;
+    const d0 = (docImgEls[pIdx0] || docImgEls[0]).getBoundingClientRect();
     const po = (x, y) => ({ pointerId: 7, isPrimary: true, pointerType: 'mouse', clientX: x, clientY: y, pressure: 0.5, bubbles: true, cancelable: true, buttons: 1 });
     el.docScroll.dispatchEvent(new PointerEvent('pointerdown', po(d0.left + 4, d0.top + 4)));
     el.docScroll.dispatchEvent(new PointerEvent('pointermove', po(d0.right - 4, d0.bottom - 4)));
